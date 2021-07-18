@@ -154,6 +154,8 @@ class WooCommerce {
 
   String? _authToken;
   String? get authToken => _authToken;
+  String? _wcstoreapi;
+  String? get wcStoreApi => _wcstoreapi;
 
   Uri? queryUri;
   String get apiResourceUrl => queryUri.toString();
@@ -162,6 +164,34 @@ class WooCommerce {
   Map<String, String> _urlHeader = {'Authorization': ''};
   String get urlHeader => _urlHeader['Authorization'] = 'Bearer ' + authToken!;
   LocalDatabaseService _localDbService = LocalDatabaseService();
+
+  /// HTTP Get Call to Woocommerce block STOREAPI CART module to get X-WC-Store-API-Nonce [wc_store_api]
+  /// Sends Get Request with your Authorization JWT bearer [_token] string. to receive a renspose header
+  /// header consists the logged in users X-WC-Store-API-Nonce
+  ///
+  /// Associated endpoint : yourwebsite.com/wp-json/wp-json/wc/store/cart
+  ///
+  Future<String?> fetchXWCStoreAPINonce() async {
+    _authToken = await _localDbService.getSecurityToken();
+    _urlHeader['Authorization'] = 'Bearer ' + _authToken!;
+    final response = await http.get(
+        Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart'),
+        headers: _urlHeader);
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      final reponseHeader = response.headers;
+      _wcstoreapi = reponseHeader['x-wc-store-api-nonce'];
+      if (reponseHeader.length == 0)
+        throw new WooCommerceError(
+            code: 'Error', message: "Could not Retreive X-WC-Store-API-Nonce");
+      _printToLog('["x-wc-store-api-nonce"] : ' + _wcstoreapi!.toString());
+      return _wcstoreapi;
+    } else {
+      WooCommerceError err =
+          WooCommerceError.fromJson(json.decode(response.body));
+      throw err;
+    }
+  }
 
   /// Authenticates the user using WordPress JWT authentication and returns the access [_token] string.
   ///
@@ -999,7 +1029,7 @@ class WooCommerce {
   */
 
   /// Accepts an int [id] of a product or product variation, int quantity, and an array of chosen variation attribute objects
-  /// Related endpoint : wc/store/cart
+  /// Related endpoint : wc/store/cart/add-item
   ///
 
   Future<WooCartItem> addToMyCart(
@@ -1012,9 +1042,14 @@ class WooCommerce {
     };
     if (variations != null) data['variations'] = variations;
     await getAuthTokenFromDb();
-    _urlHeader['Authorization'] = 'Bearer ' + _authToken!;
+    final wcstoreapi = await fetchXWCStoreAPINonce();
+    final _authHeader = 'Bearer ' + _authToken!;
+    Map<String, String> _urlHeader = {
+      'Authorization': _authHeader,
+      'X-WC-Store-API-Nonce': wcstoreapi!
+    };
     final response = await http.post(
-        Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart/items'),
+        Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart/add-item'),
         headers: _urlHeader,
         body: data);
 
@@ -1030,13 +1065,20 @@ class WooCommerce {
     }
   }
 
+  /// List Cart Items
+  /// GET /cart/items
+  /// There are no parameters required for this endpoint.
   /// Returns a list of all [WooCartItem].
-  ///
   /// Related endpoint : wc/store/cart/items
 
   Future<List<WooCartItem>> getMyCartItems() async {
     await getAuthTokenFromDb();
-    _urlHeader['Authorization'] = 'Bearer ' + _authToken!;
+    final wcstoreapi = await fetchXWCStoreAPINonce();
+    final _authHeader = 'Bearer ' + _authToken!;
+    Map<String, String> _urlHeader = {
+      'Authorization': _authHeader,
+      'X-WC-Store-API-Nonce': wcstoreapi!
+    };
     final response = await http.get(
         Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart/items'),
         headers: _urlHeader);
@@ -1061,11 +1103,20 @@ class WooCommerce {
     }
   }
 
+  /// This allows the client to remain in sync with the cart data without additional requests, should the cart change or become outdated.
+  /// There are no parameters required for this endpoint.
+  ///
   /// Returns the current user's [WooCart], information
+  /// Related endpoint : wc/store/cart
 
   Future<WooCart> getMyCart() async {
     await getAuthTokenFromDb();
-    _urlHeader['Authorization'] = 'Bearer ' + _authToken!;
+    final wcstoreapi = await fetchXWCStoreAPINonce();
+    final _authHeader = 'Bearer ' + _authToken!;
+    Map<String, String> _urlHeader = {
+      'Authorization': _authHeader,
+      'X-WC-Store-API-Nonce': wcstoreapi!
+    };
     WooCart cart;
     final response = await http.get(
         Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart'),
@@ -1083,13 +1134,23 @@ class WooCommerce {
     }
   }
 
+  /// Delete Single Cart Item
+  /// Delete/remove an item from the cart.
+  /// Attribute	Required [key] String
+  /// Related endpoint :  wc/store/cart/items/[key]
+
   Future deleteMyCartItem({required String key}) async {
     Map<String, dynamic> data = {
       'key': key,
     };
     _printToLog('Deleting CartItem With Payload : ' + data.toString());
     await getAuthTokenFromDb();
-    _urlHeader['Authorization'] = 'Bearer ' + _authToken!;
+    final wcstoreapi = await fetchXWCStoreAPINonce();
+    final _authHeader = 'Bearer ' + _authToken!;
+    Map<String, String> _urlHeader = {
+      'Authorization': _authHeader,
+      'X-WC-Store-API-Nonce': wcstoreapi!
+    };
 
     final http.Response response = await http.delete(
       Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart/items/' + key),
@@ -1112,9 +1173,18 @@ class WooCommerce {
     }
   }
 
+  /// Delete All Cart Items
+  /// Delete/remove all items from the cart.
+  /// There are no parameters required for this endpoint.
+
   Future deleteAllMyCartItems() async {
     await getAuthTokenFromDb();
-    _urlHeader['Authorization'] = 'Bearer ' + _authToken!;
+    final wcstoreapi = await fetchXWCStoreAPINonce();
+    final _authHeader = 'Bearer ' + _authToken!;
+    Map<String, String> _urlHeader = {
+      'Authorization': _authHeader,
+      'X-WC-Store-API-Nonce': wcstoreapi!
+    };
 
     final http.Response response = await http.delete(
       Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart/items/'),
@@ -1135,7 +1205,12 @@ class WooCommerce {
 
   Future<WooCartItem> getMyCartItemByKey(String key) async {
     await getAuthTokenFromDb();
-    _urlHeader['Authorization'] = 'Bearer ' + _authToken!;
+    final wcstoreapi = await fetchXWCStoreAPINonce();
+    final _authHeader = 'Bearer ' + _authToken!;
+    Map<String, String> _urlHeader = {
+      'Authorization': _authHeader,
+      'X-WC-Store-API-Nonce': wcstoreapi!
+    };
     WooCartItem cartItem;
     final response = await http.get(
         Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart/items/' + key),
@@ -1153,19 +1228,28 @@ class WooCommerce {
     }
   }
 
+  /// Edit Single Cart Item
+  /// Edit an item in the cart.
+  /// PUT /cart/items/:key
+  /// Attributes	Required - the [key] of the cart item to edit. [quantity] of this item in the cart.
+  /// Related endpoint :  wc/store/cart/items/[key]
+
   Future<WooCartItem> updateMyCartItemByKey(
       {required String key,
-      required int id,
       required int quantity,
       List<WooProductVariation>? variations}) async {
     Map<String, dynamic> data = {
       'key': key,
-      'id': id.toString(),
       'quantity': quantity.toString(),
     };
     if (variations != null) data['variations'] = variations;
     await getAuthTokenFromDb();
-    _urlHeader['Authorization'] = 'Bearer ' + _authToken!;
+    final wcstoreapi = await fetchXWCStoreAPINonce();
+    final _authHeader = 'Bearer ' + _authToken!;
+    Map<String, String> _urlHeader = {
+      'Authorization': _authHeader,
+      'X-WC-Store-API-Nonce': wcstoreapi!
+    };
     final response = await http.put(
         Uri.parse(this.baseUrl + URL_STORE_API_PATH + 'cart/items/' + key),
         headers: _urlHeader,
